@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    parse-stack (1.11.3)
+    parse-stack (1.11.4)
       active_model_serializers (>= 0.9, < 1)
       activemodel (>= 6, < 8)
       activesupport (>= 6, < 8)
