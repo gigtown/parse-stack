@@ -28,6 +28,7 @@ module Parse
   class File < Model
     # Regular expression that matches the old legacy Parse hosted file name
     LEGACY_FILE_RX = /^tfss-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-/
+
     # The default attributes in a Parse File hash.
     ATTRIBUTES = { __type: :string, name: :string, url: :string }.freeze
     # @return [String] the name of the file including extension (if any)
@@ -50,6 +51,7 @@ module Parse
     FIELD_NAME = "name"
     # @!visibility private
     FIELD_URL = "url"
+    # Class and instance methods for managing mime type and SSL forcing
     class << self
 
       # @return [String] the default mime-type
@@ -63,16 +65,15 @@ module Parse
         @default_mime_type ||= "image/jpeg"
       end
 
-      # @return [Boolean] When set to true, it will make all calls to File#url
       def force_ssl
         @force_ssl ||= false
       end
     end
     # The initializer to create a new file supports different inputs.
-    # If the first paramter is a string which starts with 'http', we then download
+    # If the first parameter is a string which starts with 'http', we then download
     # the content of the file (and use the detected mime-type) to set the content and mime_type fields.
     # If the first parameter is a hash, we assume it might be the Parse File hash format which contains url and name fields only.
-    # If the first paramter is a Parse::File, then we copy fields over
+    # If the first parameter is a Parse::File, then we copy fields over
     # Otherwise, creating a new file requires a name, the actual contents (usually from a File.open("local.jpg").read ) and the mime-type
     # @param name [String]
     # @param contents [Object]
@@ -80,26 +81,31 @@ module Parse
     def initialize(name, contents = nil, mime_type = nil)
       mime_type ||= Parse::File.default_mime_type
 
-      if name.is_a?(String) && name.start_with?("http") #could be url string
-        file = open(name)
-        @contents = file.read
-        @name = File.basename file.base_uri.to_s
-        @mime_type = file.content_type
-      elsif name.is_a?(Hash)
+      case name
+      when String
+        if name.start_with?("http") # URL string handling
+          file = open(name)
+          @contents = file.read
+          @name = File.basename(file.base_uri.to_s)
+          @mime_type = file.content_type
+        else
+          @name = name
+          @contents = contents
+        end
+      when Hash
         self.attributes = name
-      elsif name.is_a?(::File)
+      when ::File
         @contents = contents || name.read
-        @name = File.basename name.to_path
-      elsif name.is_a?(Parse::File)
+        @name = File.basename(name.to_path)
+      when Parse::File
         @name = name.name
         @url = name.url
       else
         @name = name
         @contents = contents
       end
-      if @name.blank?
-        raise ArgumentError, "Invalid Parse::File initialization with name '#{@name}'"
-      end
+
+      raise ArgumentError, "Invalid Parse::File initialization with name '#{@name}'" if @name.blank?
 
       @mime_type ||= mime_type
     end
@@ -109,7 +115,7 @@ module Parse
     # @return [Parse::File] A newly saved file based on contents of _url_
     def self.create(url)
       url = url.url if url.is_a?(Parse::File)
-      file = self.new(url)
+      file = new(url)
       file.save
       file
     end
@@ -124,81 +130,67 @@ module Parse
     # set to true, it will make sure it returns a secure url.
     # @return [String] the url string for the file.
     def url
-      if @url.present? && Parse::File.force_ssl && @url.starts_with?("http://")
-        return @url.sub("http://", "https://")
-      end
+      return @url&.sub("http://", "https://") if Parse::File.force_ssl && @url&.start_with?("http://")
       @url
     end
 
-    # @return [Hash]
+    # Define attributes for Parse File
     def attributes
       ATTRIBUTES
     end
 
-    # @return [Boolean] Two files are equal if they have the same url
-    def ==(u)
-      return false unless u.is_a?(self.class)
-      @url == u.url
+    # Compare two files for equality based on their URLs
+    def ==(other)
+      other.is_a?(self.class) && @url == other.url
     end
 
-    # Allows mass assignment from a Parse JSON hash.
-    def attributes=(h)
-      if h.is_a?(String)
-        @url = h
-        @name = File.basename(h)
-      elsif h.is_a?(Hash)
-        @url = h[FIELD_URL] || h[:url] || @url
-        @name = h[FIELD_NAME] || h[:name] || @name
-      end
+    # Mass assignment from a Parse JSON hash
+    def attributes=(hash)
+      @url = hash[FIELD_URL] || hash[:url] || @url
+      @name = hash[FIELD_NAME] || hash[:name] || @name
     end
 
-    # A proxy method for ::File.basename
-    # @param file_name [String]
-    # @param suffix [String]
-    # @return [String] File.basename(file_name)
-    # @see ::File.basename
+    # Proxy method for File.basename
     def self.basename(file_name, suffix = nil)
-      if suffix.nil?
-        ::File.basename(file_name)
-      else
-        ::File.basename(file_name, suffix)
-      end
+      suffix.nil? ? ::File.basename(file_name) : ::File.basename(file_name, suffix)
     end
 
     # Save the file by uploading it to Parse and creating a file pointer.
     # @return [Boolean] true if successfully uploaded and saved.
     def save
-      unless saved? || @contents.nil? || @name.nil?
-        response = client.create_file(@name, @contents, @mime_type)
-        unless response.error?
-          result = response.result
-          @name = result[FIELD_NAME] || File.basename(result[FIELD_URL])
-          @url = result[FIELD_URL]
-        end
+      return true if saved? || @contents.nil? || @name.nil?
+
+      response = client.create_file(@name, @contents, @mime_type)
+
+      unless response.error?
+        result = response.result
+        @name = result[FIELD_NAME] || File.basename(result[FIELD_URL])
+        @url = result[FIELD_URL]
       end
+
       saved?
     end
 
     # @return [Boolean] true if this file is hosted by Parse's servers.
     def parse_hosted_file?
       return false if @url.blank?
-      ::File.basename(@url).starts_with?("tfss-") || @url.starts_with?("http://files.parsetfss.com")
+
+      ::File.basename(@url).start_with?("tfss-") || @url.start_with?("http://files.parsetfss.com")
     end
 
-    # @!visibility private
-    def inspect
-      "<Parse::File @name='#{@name}' @mime_type='#{@mime_type}' @contents=#{@contents.nil?} @url='#{@url}'>"
-    end
-
-    # @return [String] the url
-    # @see #url
+    # Return a string representation of the object
     def to_s
       @url
+    end
+
+    # Inspect method to provide file details
+    def inspect
+      "<Parse::File @name='#{@name}' @mime_type='#{@mime_type}' @contents=#{@contents.nil?} @url='#{@url}'>"
     end
   end
 end
 
-# Adds extensions to Hash class.
+# Adds extensions to Hash class to check for Parse file metadata
 class Hash
   # Determines if the hash contains Parse File json metadata fields. This is determined whether
   # the key `__type` exists and is of type `__File` and whether the `name` field matches the File.basename
@@ -208,7 +200,6 @@ class Hash
   def parse_file?
     url = self[Parse::File::FIELD_URL]
     name = self[Parse::File::FIELD_NAME]
-    (count == 2 || self["__type"] == Parse::File.parse_class) &&
-    url.present? && name.present? && name == ::File.basename(url)
+    (count == 2 || self["__type"] == Parse::File.parse_class) && url.present? && name.present? && name == ::File.basename(url)
   end
 end
