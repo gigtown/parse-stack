@@ -1,5 +1,9 @@
 ## Parse-Stack Changelog
 
+### 1.11.5
+- Relaxes activemodel and activesupport caps to support Rails 8.1.2 (≤ 8.1.2)
+- Relaxes rack dependency to allow Rack 3.x (removes `< 3` cap) for Sidekiq 8 compatibility
+
 ### 1.11.3
 - Adds "empty" query constraint option
 - Adds "include" alias for "includes" query method
