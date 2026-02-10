@@ -210,12 +210,13 @@ module Parse
 
       # @!attribute key
       # Returns the configured webhook key if available. By default it will use
-      # the value of ENV['PARSE_SERVER_WEBHOOK_KEY'] if not configured.
-      # @return [String]
-      attr_accessor :key
+      # the value of ENV['PARSE_SERVER_WEBHOOK_KEY'] or ENV['PARSE_WEBHOOK_KEY'] (read each time, no memo).
+      # @return [String, nil]
+      attr_writer :key
 
       def key
-        @key ||= ENV["PARSE_SERVER_WEBHOOK_KEY"] || ENV["PARSE_WEBHOOK_KEY"]
+        v = @key.presence || ENV["PARSE_SERVER_WEBHOOK_KEY"].presence || ENV["PARSE_WEBHOOK_KEY"].presence
+        v.to_s.strip.presence
       end
 
       # Standard Rack call method. This method processes an incoming cloud code
@@ -235,9 +236,14 @@ module Parse
       def call!(env)
         request = Rack::Request.new env
         response = Rack::Response.new
+        path = request.path_info.to_s
+        # Log every webhook request for correlation with Parse Server logs
+        puts "[Parse::Webhooks] Received #{request.request_method} #{path}"
 
-        if self.key.present? && self.key != request.env[HTTP_PARSE_WEBHOOK]
-          puts "[Parse::Webhooks] Invalid Parse-Webhook Key: #{request.env[HTTP_PARSE_WEBHOOK]}"
+        configured_key = self.key
+        received_key = request.env[HTTP_PARSE_WEBHOOK].to_s.strip.presence
+        if configured_key.present? && configured_key != received_key
+          puts "[Parse::Webhooks] REJECTED (webhook key mismatch) path=#{path} received_length=#{(received_key || '').length}"
           response.write error("Invalid Parse Webhook Key")
           return response.finish
         end
@@ -290,6 +296,8 @@ module Parse
             puts success(result)
             puts "----------------------------------------------------\n"
           end
+          trigger_info = payload.trigger? ? "#{payload.trigger_name} #{payload.parse_class}:#{payload.parse_id}" : (payload.function? ? "function #{payload.function_name}" : path)
+          puts "[Parse::Webhooks] OK #{trigger_info}"
           response.write success(result)
           return response.finish
         rescue Parse::Webhooks::ResponseError, ActiveModel::ValidationError => e
@@ -298,6 +306,8 @@ module Parse
           elsif payload.function?
             puts "[Webhooks::ResponseError] >> #{payload.function_name}: #{e}"
           end
+          err_ctx = payload.trigger? ? "#{payload.trigger_name} #{payload.parse_class}" : payload.function_name
+          puts "[Parse::Webhooks] ERROR #{err_ctx}: #{e.message}"
           response.write error(e.to_s)
           return response.finish
         end

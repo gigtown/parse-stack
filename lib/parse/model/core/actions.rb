@@ -442,10 +442,19 @@ module Parse
           # Because beforeSave hooks can change the fields we are saving, any items that were
           # changed, are returned to us and we should apply those locally to be in sync.
           set_attributes!(result)
+          @parse_last_error = nil
+        elsif response.error?
+          @parse_last_error = response.error
+          puts "Error updating #{self.parse_class}: #{response.error}"
         end
-        puts "Error updating #{self.parse_class}: #{response.error}" if response.error?
         return response if raw
         response.success?
+      end
+
+      # Last error message from Parse API after a failed update (e.g. webhook key mismatch).
+      # @return [String, nil]
+      def parse_last_error
+        @parse_last_error
       end
 
       # Save all the changes related to this object.
