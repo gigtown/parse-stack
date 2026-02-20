@@ -1,6 +1,6 @@
 source "https://rubygems.org"
 
-ruby '3.4.8' # Ensure Ruby version is compatible with Rails
+ruby '4.0.1' # Latest stable Ruby 4.0.1 (released Jan 13, 2026)
 # Specify your gem's dependencies in parse-stack.gemspec
 gemspec
 

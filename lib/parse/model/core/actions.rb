@@ -148,8 +148,8 @@ module Parse
         # @param resource_attrs [Hash] a set of attribute values to be applied if an object was not found.
         # @return [Parse::Object] a Parse::Object, whether found by the query or newly created.
         def first_or_create(query_attrs = {}, resource_attrs = {})
-          query_attrs = query_attrs.symbolize_keys
-          resource_attrs = resource_attrs.symbolize_keys
+          query_attrs = query_attrs.to_h.symbolize_keys
+          resource_attrs = resource_attrs.to_h.symbolize_keys
           obj = query(query_attrs).first
 
           if obj.blank?

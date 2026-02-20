@@ -10,7 +10,7 @@ require "rails/generators/named_base"
 module ParseStack
   # Adds support for rails when installing Parse::Stack to a Rails project.
   class InstallGenerator < Rails::Generators::Base
-    source_root File.expand_path("../templates", __FILE__)
+    source_root File.expand_path("templates", __dir__)
 
     desc "This generator creates an initializer file at config/initializers"
     # @!visibility private
