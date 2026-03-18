@@ -22,8 +22,11 @@ build/
 /doc/
 /rdoc/
 
-## Environment normalization:
-/.bundle/
+## Environment normalization (keep .bundle/config for BUNDLE_LOCKFILE_CHECKSUMS):
+/.bundle
+!/.bundle
+/.bundle/*
+!/.bundle/config
 /vendor/bundle
 /lib/bundler/man/
 
