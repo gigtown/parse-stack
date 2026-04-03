@@ -78,18 +78,27 @@ module Parse
 
     # @!visibility private
     def _validate_point
+      # Auto-fix swapped lat/lng (e.g., -117.1 as latitude should be longitude)
+      if @latitude.present? && !@latitude.between?(LAT_MIN, LAT_MAX) && @longitude.present? && @longitude.between?(LAT_MIN, LAT_MAX)
+        # Lat looks like a longitude, swap them
+        swapped = @latitude
+        @latitude = @longitude
+        @longitude = swapped
+        return # Skip warning after auto-fix
+      end
+
       unless @latitude.nil? || @latitude.between?(LAT_MIN, LAT_MAX)
         warn "[Parse::GeoPoint] Latitude (#{@latitude}) is not between #{LAT_MIN}, #{LAT_MAX}!"
-        warn "Attempting to use GeoPoint’s with latitudes outside these ranges will raise an exception in a future release."
+        warn "Attempting to use GeoPoint's with latitudes outside these ranges will raise an exception in a future release."
       end
 
       unless @longitude.nil? || @longitude.between?(LNG_MIN, LNG_MAX)
         warn "[Parse::GeoPoint] Longitude (#{@longitude}) is not between #{LNG_MIN}, #{LNG_MAX}!"
-        warn "Attempting to use GeoPoint’s with longitude outside these ranges will raise an exception in a future release."
+        warn "Attempting to use GeoPoint's with longitude outside these ranges will raise an exception in a future release."
       end
     end
 
-    # @return [Hash] attributes for a Parse GeoPoint.
+    # @return [Hash] attributes for a a Parse GeoPoint.
     def attributes
       ATTRIBUTES
     end
