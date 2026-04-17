@@ -163,12 +163,26 @@ module Parse
             @store.delete "mk:#{url.to_s}" # master key cache-key
             @store.delete @cache_key # final key
           end
-        rescue ::TypeError, Errno::EINVAL, Redis::CannotConnectError, Redis::TimeoutError => e
-          # if the cache store fails to connect, catch the exception but proceed
-          # with the regular request, but turn off caching for this request. It is possible
-          # that the cache connection resumes at a later point, so this is temporary.
+        rescue ::TypeError, Errno::EINVAL, Errno::ECONNREFUSED, Errno::ETIMEDOUT, IOError => e
+          # If the cache store fails to connect, catch the exception but proceed
+          # with the regular request. We turn off caching for this request only;
+          # the cache connection may resume later.
+          # NOTE: We deliberately avoid referencing Redis::CannotConnectError /
+          # Redis::TimeoutError here, because parse-stack does not `require
+          # 'redis'` and the Redis constant may not be defined at the moment
+          # this rescue is hit. Referencing an undefined constant would raise
+          # NameError and crash the request mid-cycle, which in Rails apps
+          # causes partial session cookie writes and downstream CSRF failures.
+          # Redis errors inherit from StandardError or IOError depending on the
+          # client version; the broader rescue on `error_all` below covers them.
           @enabled = false
           puts "[Parse::Cache] Error: #{e}"
+        rescue StandardError => e
+          # Catch-all for gems like redis-rb or connection_pool that may raise
+          # their own error classes. Degrade gracefully to uncached pass-through
+          # rather than propagating and corrupting the caller's request state.
+          @enabled = false
+          puts "[Parse::Cache] Unhandled cache error: #{e.class}: #{e.message}"
         end
 
         @app.call(env).on_complete do |response_env|

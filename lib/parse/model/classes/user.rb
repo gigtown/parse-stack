@@ -394,19 +394,47 @@ module Parse
     #  Parse::User.request_password_reset("user@example.com")
     # @param email [String] The user's email address.
     # @return [Boolean] True/false if successful.
+    # @note Parse Server / network errors are caught and logged here so that a
+    #  transient Parse outage does not crash the caller mid-request (which, in
+    #  Rails apps, manifests as partial session cookie writes and subsequent
+    #  CSRF failures on the next request). To inspect the raw error, call
+    #  `client.request_password_reset(email)` directly.
     def self.request_password_reset(email)
       email = email.email if email.is_a?(Parse::User)
       return false if email.blank?
       response = client.request_password_reset(email)
       response.success?
+    rescue Parse::Error::ConnectionError,
+           Parse::Error::TimeoutError,
+           Parse::Error::ServiceUnavailableError,
+           Parse::Error::ServerError,
+           Parse::Error::AuthenticationError,
+           Parse::Error::RequestLimitExceededError,
+           Parse::Error::ProtocolError => e
+      warn "[Parse::User.request_password_reset] #{e.class}: #{e.message}"
+      false
     end
 
-    # Same as `session!` but returns nil if a user was not found or sesion token was invalid.
+    # Same as `session!` but returns nil if a user was not found or session token
+    # was invalid OR if the Parse backend is transiently unreachable. This is
+    # the contract Rails controllers depend on when resolving a "current_user"
+    # from a session token on every request: a bubbled exception here leaves the
+    # request cycle half-completed, which causes session/CSRF corruption in the
+    # browser.
+    #
     # @return [User] the user matching this active token, otherwise nil.
     # @see #session!
     def self.session(token, opts = {})
       self.session! token, opts
-    rescue Parse::Error::InvalidSessionTokenError => e
+    rescue Parse::Error::InvalidSessionTokenError,
+           Parse::Error::AuthenticationError,
+           Parse::Error::ConnectionError,
+           Parse::Error::TimeoutError,
+           Parse::Error::ServiceUnavailableError,
+           Parse::Error::ServerError,
+           Parse::Error::RequestLimitExceededError,
+           Parse::Error::ProtocolError => e
+      warn "[Parse::User.session] #{e.class}: #{e.message}" unless e.is_a?(Parse::Error::InvalidSessionTokenError)
       nil
     end
 
